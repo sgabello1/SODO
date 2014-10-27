@@ -9,5 +9,3 @@ To run the GUI:
 - download and install ODOMI (https://github.com/fly4smartcity/odomi) 
 
 - roslaunch odomi-launcher seed.launch
-
-- open sodo.html in a web browser (tested in Firefox)
