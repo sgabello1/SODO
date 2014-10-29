@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+<head>
+<title>Extrusion (Three.js)</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+<link rel=stylesheet href="css/base.css"/>
+</head>
+<body>
+<!-- <script src="js/Three.js"></script> 
+ --><script src="js/Detector.js"></script>
+<script src="js/Stats.js"></script>
+<!-- <script src="js/OrbitControls.js"></script> -->
+<script src="js/THREEx.KeyboardState.js"></script>
+<script src="js/THREEx.FullScreen.js"></script>
+<script src="js/THREEx.WindowResize.js"></script>
+<script type="text/javascript" src="http://cdn.robotwebtools.org/EventEmitter2/current/eventemitter2.min.js"></script>
+<script type="text/javascript" src="http://cdn.robotwebtools.org/roslibjs/current/roslib.min.js"></script>
+<script src="js/subscriber_ros_gui.js"></script>
+<script src="js/jquery-1.9.1.js"></script>
+<script src="build/three.min.js"></script>
+<script src="js/jquery-ui.js"></script>
+<script src="js/controls/FirstPersonControls.js"></script>
+<script src="js/CurveExtras.js"></script>
+<script src="js/libs/stats.min.js"></script>
+
+<link rel=stylesheet href="css/jquery-ui.css" />
+<link rel=stylesheet href="css/info.css"/>
+<!-- <script src="js/info.js"></script>
+<div id="infoButton"></div>
+<div id="infoBox" title="Demo Information"> -->
+
+<!-- ------------------------------------------------------------ -->
+<div id="ThreeJS" style="position: absolute; left:0px; top:0px"></div>
+<script>
+/*
+Three.js "S.O.D.O"
+Author: Sgabello
+Date: July 2014 (three.js )
+*/
+// MAIN
+// standard global variables
+	var container, scene, controls, renderer,  stats;
+	var camera;
+	var keyboard = new THREEx.KeyboardState();
+
+	var parent;
+	var tube, tubeMesh;
+	var animation = false, lookAhead = false;
+	var scale;
+	
+	var worldWidth = 128, worldDepth = 128,
+	worldHalfWidth = worldWidth / 2, worldHalfDepth = worldDepth / 2;
+
+	// custom global variables
+	var cube;
+	var clock = new THREE.Clock();
+	init();
+	animate();
+
+	var ros = new ROSLIB.Ros({
+		  //url : 'ws://192.168.1.88:9090'
+	    	url : 'ws://localhost:9091'
+	  });
+
+ 
+
+	//subscribing  opendata for buildings visualization
+	var listener_opendata = new ROSLIB.Topic({
+	    ros : ros,
+	    name : '/od_buildings_gui',
+	    messageType : 'see0d/buildings'
+
+	  });
+	listener_opendata.subscribe(function(od_buildings_msg) {
+
+		//console.log("received buildings");
+		for(var i = 0; i < od_buildings_msg.building.length-1; i++){
+
+		 //console.log(" hiegth ", od_buildings_msg.building[i].points[0].z, " i ", i);
+		 drawPolygon(od_buildings_msg.building[i].points, od_buildings_msg.building[i].points[0].z);
+		}
+	  });	  
+	
+	//subscribing  opendata for tree visualization
+	var listener_opendata = new ROSLIB.Topic({
+	    ros : ros,
+	    name : '/od_tree_gui',
+	    messageType : 'geometry_msgs/Polygon'
+
+	  });
+	listener_opendata.subscribe(function(od_tree_msg) {
+
+		//console.log("received tree ", od_tree_msg.points.length-1);
+		for(var i = 0; i < od_tree_msg.points.length-1; i++){
+
+		 drawTree(od_tree_msg.points[i], od_tree_msg.points[i].z);
+		}
+	  });
+
+	var listener_feedback = new ROSLIB.Topic({
+	    ros : ros,
+	    name : '/camera',
+	    messageType : 'geometry_msgs/PoseWithCovariance'
+
+	  });
+
+	listener_feedback.subscribe(function(dronePose) {
+
+		console.log("camera is in  x, ", dronePose.pose.position.x, "  y, ", dronePose.pose.position.y, "z " , dronePose.pose.position.z,  
+			"roll  ", dronePose.pose.orientation.x, "pitch  ", dronePose.pose.orientation.y, "yaw  ",  dronePose.pose.orientation.z  );
+
+		camera.position.x = dronePose.pose.position.x;
+		camera.position.y = dronePose.pose.position.y;
+		camera.position.z = dronePose.pose.position.z;
+		
+		camera.rotation.x = Math.PI/180*dronePose.pose.orientation.x;
+		camera.rotation.y = Math.PI/180*dronePose.pose.orientation.y;
+		camera.rotation.z = Math.PI/180*dronePose.pose.orientation.z;
+	  });
+
+	function init()
+	  {
+		
+		container = document.createElement('container');
+		
+		camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.01, 1000);
+		camera.position.z = 2 * 100 + 100;
+		camera.rotation.x = Math.PI/6;
+
+		scene = new THREE.Scene();
+
+		
+		if ( Detector.webgl )
+		renderer = new THREE.WebGLRenderer( {antialias:true} );
+		else
+		renderer = new THREE.CanvasRenderer();
+		renderer.setSize(window.innerWidth, window.innerHeight);
+		container = document.getElementById( 'ThreeJS' );
+		container.appendChild( renderer.domElement );
+		
+		// CONTROLS
+		//controls = new THREE.OrbitControls( camera, renderer.domElement );
+		
+		// FLOOR
+		var floorTexture = new THREE.ImageUtils.loadTexture( 'images/checkerboard.jpg' );
+		floorTexture.wrapS = floorTexture.wrapT = THREE.RepeatWrapping;
+		floorTexture.repeat.set( 10, 10 );
+		var floorMaterial = new THREE.MeshBasicMaterial( { map: floorTexture, side: THREE.DoubleSide } );
+		var floorGeometry = new THREE.PlaneGeometry(1000, 1000, 10, 10);
+		var floor = new THREE.Mesh(floorGeometry, floorMaterial);
+		scene.add(floor);
+
+
+		container.innerHTML = "";
+
+		container.appendChild( renderer.domElement );
+
+		// stats = new Stats();
+		// stats.domElement.style.position = 'absolute';
+		// stats.domElement.style.top = '0px';
+		// container.appendChild( stats.domElement );
+		
+	  }
+
+
+	
+	function drawTree(point, extrusionDepth)
+	 {
+
+	
+	var treeMaterial = new THREE.MeshBasicMaterial( { color: 0x00f000 } );
+	var wireframeMaterial = new THREE.MeshBasicMaterial( { color: 0xe0f000, wireframe: false, transparent: true } );
+	var multiMaterial = [ treeMaterial]; 
+
+	 var shape = THREE.SceneUtils.createMultiMaterialObject(
+
+				// radiusAtTop, radiusAtBottom, height, segmentsAroundRadius, segmentsAlongHeight,				
+				new THREE.CylinderGeometry( 5, 5, 10, 20, 4 ),
+				multiMaterial );
+
+		shape.position.set(point.x - 400, point.y - 400, 5);
+		shape.rotation.x = -Math.PI/2;
+		scene.add( shape );	
+  	 }
+
+	function drawPolygon(poly, extrusionDepth)
+	 {
+
+	var shapePoints = []; //buildings
+
+	for(var i = 0; i <= poly.length-1; i++)
+	{
+	//console.log("i  " ,i, " ",poly[i].x , " ",poly[i].y);
+	shapePoints.push( new THREE.Vector2 (poly[i].x,poly[i].y));
+	}
+
+	var Shape = new THREE.Shape( shapePoints );
+	var extrusionSettings = {
+		
+		amount : extrusionDepth, 
+		curveSegments: 3, 
+		bevelThickness: 1, 
+		bevelSize: 2, 
+		bevelEnabled: true,
+		material: 0, extrudeMaterial: 1
+
+	};
+	var starGeometry = new THREE.ExtrudeGeometry( Shape, extrusionSettings );
+	var materialFront = new THREE.MeshBasicMaterial( { color: 0xffff00 } );
+	var materialSide = new THREE.MeshBasicMaterial( { color: 0xff8800 } );
+	var materialArray = [ materialFront, materialSide ];
+	var starMaterial = new THREE.MeshFaceMaterial(materialArray);
+	var building = new THREE.Mesh( starGeometry, starMaterial );
+	//star.position.set(-400,-200,0);
+	building.position.set(-400,-400,0);
+	//building.rotation.x = Math.PI ;
+	
+	scene.add(building);
+	 }
+
+	function animate()
+	 {
+	  requestAnimationFrame( animate );
+	  
+	  render();	
+	  //stats.update();
+
+	 }
+
+	function render()
+	 {
+	   
+       renderer.render( scene, camera );
+       //controls.update( clock.getDelta() );
+     }
+</script>
+</body>
+</html>
